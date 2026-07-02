@@ -319,6 +319,7 @@
             <div class="dl">Text found on photo (OCR)</div>
             <div class="dv" id="detailOcrText" style="white-space: pre-wrap; font-size: 0.88rem; color: var(--ink-soft);">-</div>
         </div>
+        <button class="btn-primary" onclick="shareBillPhoto()">📤 Share / Save This Photo</button>
         <button class="btn-danger" onclick="deleteBillConfirm()">🗑️ Delete this bill</button>
     </section>
 
@@ -423,6 +424,12 @@
         <div class="guide-section">
             <h3>Finding a bill later</h3>
             <p>Tap 🔍 at the top and type anything — a consumer number, a name, part of an address, a date, or a word from your notes. It searches every bill in every category at once, including the text the camera automatically read off each photo. You don't need to remember which category you filed something under.</p>
+        </div>
+
+        <div class="guide-section">
+            <h3>Sharing or saving a single bill</h3>
+            <p>Open any bill and tap <strong>📤 Share / Save This Photo</strong>. This opens your phone's normal Share screen, where you can send that one bill's photo straight to WhatsApp, Telegram, email, Google Drive, or save it to your gallery — without exporting your whole collection.</p>
+            <p>This is different from the backup below: it shares just the photo of the bill you're viewing, not a data file of everything.</p>
         </div>
 
         <div class="guide-section">
@@ -898,6 +905,53 @@
     // ============================================================
     // DELETE BILL
     // ============================================================
+    // ============================================================
+    // SHARE / SAVE A SINGLE BILL PHOTO
+    // ============================================================
+    async function shareBillPhoto() {
+        if (!currentBillId) return;
+        try {
+            const bill = await dbGetBill(currentBillId);
+            if (!bill || !bill.photo) {
+                showToast('❌ Photo not found', 'error');
+                return;
+            }
+
+            const cat = CATEGORIES.find(c => c.id === bill.category);
+            const safeName = (bill.refNumber || (cat ? cat.name : bill.category) || 'bill').replace(/[^a-zA-Z0-9]/g, '_');
+            const filename = `${safeName}_${bill.date || 'bill'}.jpg`;
+
+            if (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) {
+                const { Filesystem, Share } = Capacitor.Plugins;
+                const base64Data = bill.photo.split(',')[1]; // strip the "data:image/jpeg;base64," prefix
+
+                const result = await Filesystem.writeFile({
+                    path: filename,
+                    data: base64Data,
+                    directory: 'CACHE'
+                });
+
+                await Share.share({
+                    title: filename,
+                    url: result.uri,
+                    dialogTitle: 'Save or share this bill'
+                });
+            } else {
+                // Browser / PWA fallback: direct download
+                const link = document.createElement('a');
+                link.href = bill.photo;
+                link.download = filename;
+                link.style.display = 'none';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }
+        } catch (error) {
+            console.error('Share photo error:', error);
+            showToast('❌ Could not share photo: ' + error.message, 'error');
+        }
+    }
+
     async function deleteBillConfirm() {
         if (!currentBillId) return;
         const confirmed = confirm('Delete this bill? This cannot be undone.');
@@ -1187,10 +1241,11 @@
         }
     })();
 </script>
-    <div style="text-align:center; padding:15px; margin-top:20px; border-top:1px solid #eee; font-size:13px; color:#888;">
+
+<div style="text-align:center; padding:15px; margin-top:20px; border-top:1px solid #eee; font-size:13px; color:#888;">
     Bill Folder v1.0.0<br>
-    Developed by <strong>[Muraly C B]</strong><br>
-    📧 [7012451340]
+    Developed by <strong>[Your Name]</strong><br>
+    📧 [your email/phone if you want]
 </div>
 </body>
 </html>
