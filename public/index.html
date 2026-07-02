@@ -59,6 +59,14 @@
         align-items: center;
         gap: 6px;
     }
+    .sync-btn {
+        position: absolute; top: 18px; right: 16px;
+        background: rgba(255,255,255,0.12);
+        border: none; color: #F3EFE4; font-size: 0.72rem;
+        padding: 6px 10px; border-radius: 14px; cursor: pointer;
+        display: flex; align-items: center; gap: 5px;
+    }
+    .sync-btn.connected { background: rgba(120,200,140,0.25); }
     main { padding: 18px 16px 10px; max-width: 720px; margin: 0 auto; }
 
     /* Category grid (folder tabs) */
@@ -238,6 +246,7 @@
 <body>
 
 <header class="app-header" id="appHeader">
+    <button class="sync-btn" id="syncBtn" onclick="openSyncModal()">☁️ <span id="syncStatusLabel">Not connected</span></button>
     <h1>📁 Bill Folder</h1>
     <p id="headerSubtitle">Snap it. File it. Find it later.</p>
 </header>
@@ -314,6 +323,24 @@
         </div>
 
         <button class="btn-primary" id="saveBillBtn" onclick="saveBill()" disabled>Save Bill</button>
+    </div>
+</div>
+
+<!-- CLOUD SYNC MODAL -->
+<div class="modal-overlay" id="syncModal">
+    <div class="modal-sheet">
+        <button class="modal-close" onclick="closeSyncModal()">✕</button>
+        <h2>☁️ Cloud Sync</h2>
+        <p style="font-size:0.85rem; color:var(--ink-soft); margin-bottom:14px;">
+            Paste your Firebase project config below to back up bills to the cloud and restore them on another device.
+        </p>
+        <div class="field">
+            <label>Firebase Configuration (JSON)</label>
+            <textarea id="firebaseConfigInput" style="min-height:120px; font-family: monospace; font-size:0.8rem;" placeholder='{"apiKey":"...","projectId":"...", ...}'></textarea>
+        </div>
+        <button class="btn-primary" onclick="saveFirebaseConfig()">Save & Connect</button>
+        <button class="btn-primary" style="background:#5A6270; margin-top:10px;" onclick="syncNow()">🔄 Sync Now (upload + restore)</button>
+        <div id="syncStatusDetail" style="font-size:0.8rem; color:var(--ink-soft); margin-top:14px; white-space:pre-wrap;"></div>
     </div>
 </div>
 
@@ -660,6 +687,7 @@
             await dbAddBill(bill);
             showToast('✅ Bill saved');
             closeAddModal();
+            uploadBillToCloud(bill); // best-effort, runs in background, never blocks the UI
             if (currentCategoryId) {
                 await renderCategoryList(currentCategoryId);
             } else {
@@ -690,12 +718,183 @@
     }
 
     // ============================================================
+    // CLOUD SYNC (Firebase)
+    // ============================================================
+    let firebaseApp = null;
+    let firestoreDb = null;
+    let firebaseStorage = null;
+    let firebaseReady = false;
+
+    function loadScript(src) {
+        return new Promise((resolve, reject) => {
+            if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
+            const s = document.createElement('script');
+            s.src = src;
+            s.onload = () => resolve();
+            s.onerror = () => reject(new Error('Failed to load ' + src));
+            document.head.appendChild(s);
+        });
+    }
+
+    async function loadFirebaseSdk() {
+        if (window.firebase) return;
+        const base = 'https://www.gstatic.com/firebasejs/10.12.2/';
+        await loadScript(base + 'firebase-app-compat.js');
+        await loadScript(base + 'firebase-firestore-compat.js');
+        await loadScript(base + 'firebase-storage-compat.js');
+    }
+
+    function updateSyncStatusUI() {
+        const btn = document.getElementById('syncBtn');
+        const label = document.getElementById('syncStatusLabel');
+        if (firebaseReady) {
+            btn.classList.add('connected');
+            label.textContent = 'Connected';
+        } else {
+            btn.classList.remove('connected');
+            label.textContent = 'Not connected';
+        }
+    }
+
+    async function initFirebaseFromSavedConfig() {
+        const saved = localStorage.getItem('billFolderFirebaseConfig');
+        if (!saved) return;
+        try {
+            const config = JSON.parse(saved);
+            await connectFirebase(config, false);
+        } catch (error) {
+            console.error('Saved Firebase config invalid:', error);
+        }
+    }
+
+    async function connectFirebase(config, showToastOnSuccess) {
+        await loadFirebaseSdk();
+        firebaseApp = (firebase.apps && firebase.apps.length) ? firebase.app() : firebase.initializeApp(config);
+        firestoreDb = firebase.firestore();
+        firebaseStorage = firebase.storage();
+        firebaseReady = true;
+        updateSyncStatusUI();
+        if (showToastOnSuccess) showToast('✅ Connected to cloud sync');
+    }
+
+    function openSyncModal() {
+        document.getElementById('firebaseConfigInput').value = localStorage.getItem('billFolderFirebaseConfig') || '';
+        document.getElementById('syncStatusDetail').textContent = firebaseReady ? 'Status: Connected' : 'Status: Not connected';
+        document.getElementById('syncModal').classList.add('show');
+    }
+
+    function closeSyncModal() {
+        document.getElementById('syncModal').classList.remove('show');
+    }
+
+    async function saveFirebaseConfig() {
+        const text = document.getElementById('firebaseConfigInput').value.trim();
+        if (!text) { showToast('❌ Paste your Firebase config first', 'error'); return; }
+        let config;
+        try {
+            config = JSON.parse(text);
+        } catch (e) {
+            showToast('❌ Could not parse — paste valid JSON, e.g. {"apiKey":"...","projectId":"..."}', 'error');
+            return;
+        }
+        if (!config.apiKey || !config.projectId) {
+            showToast('❌ Config is missing apiKey or projectId', 'error');
+            return;
+        }
+        try {
+            localStorage.setItem('billFolderFirebaseConfig', JSON.stringify(config));
+            await connectFirebase(config, true);
+            document.getElementById('syncStatusDetail').textContent = 'Status: Connected';
+        } catch (error) {
+            console.error('Firebase connect error:', error);
+            showToast('❌ Could not connect: ' + error.message, 'error');
+        }
+    }
+
+    // Best-effort: upload one bill's metadata + photo to the cloud.
+    // Never blocks or fails the local save if this doesn't work.
+    async function uploadBillToCloud(bill) {
+        if (!firebaseReady) return;
+        try {
+            const blob = await (await fetch(bill.photo)).blob();
+            const storageRef = firebaseStorage.ref().child(`bills/${bill.category}/${bill.id}.jpg`);
+            await storageRef.put(blob);
+            const photoUrl = await storageRef.getDownloadURL();
+
+            await firestoreDb.collection('bills').doc(bill.id).set({
+                category: bill.category,
+                date: bill.date,
+                refNumber: bill.refNumber,
+                notes: bill.notes,
+                ocrText: bill.ocrText || '',
+                createdAt: bill.createdAt,
+                photoUrl: photoUrl
+            });
+        } catch (error) {
+            console.warn('Cloud upload skipped (will retry on next Sync Now):', error.message);
+        }
+    }
+
+    // Pushes any un-synced local bills, then pulls cloud bills not present locally.
+    async function syncNow() {
+        if (!firebaseReady) {
+            showToast('❌ Connect to cloud sync first', 'error');
+            return;
+        }
+        const detail = document.getElementById('syncStatusDetail');
+        detail.textContent = 'Syncing...';
+        try {
+            const localBills = await dbGetAllBills();
+            for (const bill of localBills) {
+                await uploadBillToCloud(bill);
+            }
+
+            const snapshot = await firestoreDb.collection('bills').get();
+            const localIds = new Set(localBills.map(b => b.id));
+            let restored = 0;
+
+            for (const doc of snapshot.docs) {
+                if (localIds.has(doc.id)) continue;
+                const data = doc.data();
+                const photoBlob = await (await fetch(data.photoUrl)).blob();
+                const photoDataUrl = await new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result);
+                    reader.readAsDataURL(photoBlob);
+                });
+
+                await dbAddBill({
+                    id: doc.id,
+                    category: data.category,
+                    date: data.date,
+                    refNumber: data.refNumber,
+                    notes: data.notes,
+                    ocrText: data.ocrText || '',
+                    photo: photoDataUrl,
+                    createdAt: data.createdAt
+                });
+                restored++;
+            }
+
+            detail.textContent = `Synced. ${restored} bill(s) restored from cloud.`;
+            showToast('✅ Sync complete');
+            await renderHome();
+            if (currentCategoryId) await renderCategoryList(currentCategoryId);
+        } catch (error) {
+            console.error('Sync error:', error);
+            detail.textContent = 'Sync failed: ' + error.message;
+            showToast('❌ Sync failed: ' + error.message, 'error');
+        }
+    }
+
+    // ============================================================
     // INIT
     // ============================================================
     (async function init() {
         try {
             await openDB();
             await renderHome();
+            await initFirebaseFromSavedConfig();
         } catch (error) {
             console.error('Init error:', error);
             showToast('❌ Could not open storage: ' + error.message, 'error');
