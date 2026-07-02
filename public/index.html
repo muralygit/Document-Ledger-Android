@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bill Folder</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="BillFolder">
+<link rel="apple-touch-icon" href="/icons/icon-192.png">
+<meta name="theme-color" content="#2F5233">
+<style>
+    :root {
+        --paper: #EDE4D3;
+        --card: #FBF9F5;
+        --ink: #20293A;
+        --ink-soft: #5B6270;
+        --accent: #2F5233;
+        --accent-dark: #203B24;
+        --danger: #8C2F2F;
+        --line: #DCD2BC;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+        font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        background: var(--paper);
+        color: var(--ink);
+        min-height: 100vh;
+        padding-bottom: 40px;
+    }
+    header.app-header {
+        background: var(--accent-dark);
+        color: #F3EFE4;
+        padding: 22px 20px 26px;
+        position: relative;
+    }
+    header.app-header h1 {
+        font-size: 1.5rem;
+        letter-spacing: 0.3px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    header.app-header p {
+        margin-top: 4px;
+        font-size: 0.85rem;
+        color: #C9C2AC;
+    }
+    .back-btn {
+        background: none;
+        border: none;
+        color: #F3EFE4;
+        font-size: 1rem;
+        cursor: pointer;
+        padding: 4px 0;
+        margin-bottom: 6px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    main { padding: 18px 16px 10px; max-width: 720px; margin: 0 auto; }
+
+    /* Category grid (folder tabs) */
+    .category-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+        margin-top: 8px;
+    }
+    .category-card {
+        background: var(--card);
+        border-radius: 4px 14px 10px 10px;
+        padding: 16px 14px 14px;
+        position: relative;
+        box-shadow: 0 2px 6px rgba(32,41,58,0.12);
+        cursor: pointer;
+        border-top: 6px solid var(--cat-color, var(--accent));
+        min-height: 108px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+    }
+    .category-card .cat-icon { font-size: 1.6rem; }
+    .category-card .cat-name {
+        font-weight: 600;
+        font-size: 0.95rem;
+        margin-top: 8px;
+        color: var(--ink);
+    }
+    .category-card .cat-count {
+        font-size: 0.75rem;
+        color: var(--ink-soft);
+        margin-top: 3px;
+    }
+
+    /* Bill list */
+    .bill-list { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+    .bill-card {
+        background: var(--card);
+        border-radius: 10px;
+        display: flex;
+        gap: 12px;
+        padding: 10px;
+        box-shadow: 0 1px 4px rgba(32,41,58,0.10);
+        cursor: pointer;
+        align-items: center;
+        border-left: 5px solid var(--cat-color, var(--accent));
+    }
+    .bill-card img {
+        width: 56px; height: 56px; object-fit: cover;
+        border-radius: 6px;
+        background: var(--line);
+        flex-shrink: 0;
+    }
+    .bill-card .bill-info { flex: 1; min-width: 0; }
+    .bill-card .bill-ref { font-weight: 600; font-size: 0.92rem; }
+    .bill-card .bill-date { font-size: 0.78rem; color: var(--ink-soft); margin-top: 2px; }
+    .bill-card .bill-notes {
+        font-size: 0.78rem; color: var(--ink-soft); margin-top: 2px;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .empty-state {
+        text-align: center; padding: 40px 20px; color: var(--ink-soft);
+    }
+    .empty-state .big-icon { font-size: 2.4rem; margin-bottom: 8px; }
+
+    /* Floating add button */
+    .fab {
+        position: fixed;
+        bottom: 24px; right: 22px;
+        width: 58px; height: 58px;
+        border-radius: 50%;
+        background: var(--accent);
+        color: white;
+        border: none;
+        font-size: 1.8rem;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+        cursor: pointer;
+        display: flex; align-items: center; justify-content: center;
+        z-index: 50;
+    }
+    .fab:active { background: var(--accent-dark); }
+
+    /* Modal */
+    .modal-overlay {
+        display: none;
+        position: fixed; inset: 0;
+        background: rgba(32,41,58,0.55);
+        z-index: 100;
+        align-items: flex-end;
+        justify-content: center;
+    }
+    .modal-overlay.show { display: flex; }
+    .modal-sheet {
+        background: var(--card);
+        width: 100%;
+        max-width: 720px;
+        border-radius: 18px 18px 0 0;
+        padding: 20px 18px 26px;
+        max-height: 88vh;
+        overflow-y: auto;
+    }
+    .modal-sheet h2 { font-size: 1.15rem; margin-bottom: 14px; }
+    .modal-close {
+        position: absolute; top: 14px; right: 18px;
+        background: none; border: none; font-size: 1.3rem; color: var(--ink-soft);
+        cursor: pointer;
+    }
+    .modal-sheet { position: relative; }
+
+    .capture-buttons { display: flex; gap: 10px; margin-bottom: 16px; }
+    .capture-buttons button {
+        flex: 1;
+        padding: 14px 8px;
+        border-radius: 10px;
+        border: 1.5px dashed var(--line);
+        background: #F3EEE1;
+        font-size: 0.85rem;
+        color: var(--ink);
+        cursor: pointer;
+    }
+    .capture-preview {
+        width: 100%; max-height: 260px; object-fit: contain;
+        border-radius: 10px; margin-bottom: 14px; background: var(--paper);
+        display: none;
+    }
+    .capture-preview.show { display: block; }
+
+    .field { margin-bottom: 14px; }
+    .field label {
+        display: block; font-size: 0.8rem; font-weight: 600;
+        color: var(--ink-soft); margin-bottom: 5px;
+    }
+    .field input, .field textarea, .field select {
+        width: 100%; padding: 11px 12px; border-radius: 8px;
+        border: 1px solid var(--line); font-size: 0.95rem;
+        background: #FEFDFB; color: var(--ink);
+        font-family: inherit;
+    }
+    .field textarea { resize: vertical; min-height: 60px; }
+
+    .btn-primary {
+        width: 100%; padding: 14px; border-radius: 10px; border: none;
+        background: var(--accent); color: white; font-size: 1rem; font-weight: 600;
+        cursor: pointer; margin-top: 4px;
+    }
+    .btn-primary:disabled { background: #A9B6A9; cursor: not-allowed; }
+    .btn-danger {
+        width: 100%; padding: 12px; border-radius: 10px; border: 1px solid var(--danger);
+        background: transparent; color: var(--danger); font-size: 0.9rem; font-weight: 600;
+        cursor: pointer; margin-top: 10px;
+    }
+
+    /* Detail view */
+    .detail-photo {
+        width: 100%; border-radius: 12px; margin-bottom: 16px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    }
+    .detail-field { margin-bottom: 12px; }
+    .detail-field .dl { font-size: 0.75rem; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.4px; }
+    .detail-field .dv { font-size: 1rem; margin-top: 2px; }
+
+    /* Notification */
+    .toast {
+        position: fixed; top: 16px; left: 50%; transform: translateX(-50%) translateY(-80px);
+        background: var(--accent-dark); color: white; padding: 12px 18px;
+        border-radius: 8px; font-size: 0.88rem; z-index: 200;
+        transition: transform 0.25s ease; box-shadow: 0 4px 10px rgba(0,0,0,0.25);
+        max-width: 88%; text-align: center;
+    }
+    .toast.show { transform: translateX(-50%) translateY(0); }
+    .toast.error { background: var(--danger); }
+
+    input[type="file"] { display: none; }
+</style>
+</head>
+<body>
+
+<header class="app-header" id="appHeader">
+    <h1>📁 Bill Folder</h1>
+    <p id="headerSubtitle">Snap it. File it. Find it later.</p>
+</header>
+
+<main>
+    <!-- HOME: category grid -->
+    <section id="homeScreen">
+        <div class="category-grid" id="categoryGrid"></div>
+    </section>
+
+    <!-- CATEGORY: bill list -->
+    <section id="categoryScreen" style="display:none;">
+        <div class="bill-list" id="billList"></div>
+    </section>
+
+    <!-- DETAIL: single bill -->
+    <section id="detailScreen" style="display:none;">
+        <img id="detailPhoto" class="detail-photo" src="" alt="Bill photo">
+        <div class="detail-field">
+            <div class="dl">Category</div>
+            <div class="dv" id="detailCategory">-</div>
+        </div>
+        <div class="detail-field">
+            <div class="dl">Date</div>
+            <div class="dv" id="detailDate">-</div>
+        </div>
+        <div class="detail-field">
+            <div class="dl">ID / Reference / Thandaper Number</div>
+            <div class="dv" id="detailRef">-</div>
+        </div>
+        <div class="detail-field">
+            <div class="dl">Notes</div>
+            <div class="dv" id="detailNotes">-</div>
+        </div>
+        <button class="btn-danger" onclick="deleteBillConfirm()">🗑️ Delete this bill</button>
+    </section>
+</main>
+
+<button class="fab" id="fabAdd" onclick="openAddModal()">+</button>
+
+<!-- ADD BILL MODAL -->
+<div class="modal-overlay" id="addModal">
+    <div class="modal-sheet">
+        <button class="modal-close" onclick="closeAddModal()">✕</button>
+        <h2>Add Bill</h2>
+
+        <div class="field">
+            <label>Category</label>
+            <select id="formCategory"></select>
+        </div>
+
+        <div class="capture-buttons">
+            <button type="button" onclick="capturePhoto('camera')">📷 Take Photo</button>
+            <button type="button" onclick="capturePhoto('gallery')">🖼️ Choose from Gallery</button>
+        </div>
+        <img id="capturePreviewImg" class="capture-preview" src="" alt="Preview">
+
+        <div class="field">
+            <label>Date</label>
+            <input type="date" id="formDate">
+        </div>
+        <div class="field">
+            <label>ID / Reference / Thandaper Number</label>
+            <input type="text" id="formRef" placeholder="e.g. Consumer No. 123456">
+        </div>
+        <div class="field">
+            <label>Notes (optional)</label>
+            <textarea id="formNotes" placeholder="Anything worth remembering about this bill"></textarea>
+        </div>
+
+        <button class="btn-primary" id="saveBillBtn" onclick="saveBill()" disabled>Save Bill</button>
+    </div>
+</div>
+
+<!-- Hidden fallback file input for browser/PWA testing -->
+<input type="file" id="fallbackFileInput" accept="image/*">
+
+<div class="toast" id="toast"></div>
+
+<script>
+    // ============================================================
+    // CATEGORIES
+    // ============================================================
+    const CATEGORIES = [
+        { id: 'electricity', name: 'Electricity', icon: '⚡', color: '#C98A2B' },
+        { id: 'water',       name: 'Water',       icon: '💧', color: '#2B7A8C' },
+        { id: 'landtax',     name: 'Land Tax',     icon: '🌾', color: '#6B7B3A' },
+        { id: 'buildingtax', name: 'Building Tax', icon: '🏠', color: '#8C4A2B' },
+        { id: 'cabletv',     name: 'Cable / Subscription', icon: '📺', color: '#6B3A5C' },
+        { id: 'other',       name: 'Other', icon: '📄', color: '#5A6270' },
+    ];
+
+    let currentCategoryId = null;
+    let currentBillId = null;
+    let pendingPhotoDataUrl = null;
+
+    // ============================================================
+    // INDEXEDDB
+    // ============================================================
+    const DB_NAME = 'BillFolderDB';
+    const DB_VERSION = 1;
+    let dbInstance = null;
+
+    function openDB() {
+        return new Promise((resolve, reject) => {
+            if (dbInstance) { resolve(dbInstance); return; }
+            const request = indexedDB.open(DB_NAME, DB_VERSION);
+            request.onupgradeneeded = (event) => {
+                const db = event.target.result;
+                if (!db.objectStoreNames.contains('bills')) {
+                    const store = db.createObjectStore('bills', { keyPath: 'id' });
+                    store.createIndex('category', 'category', { unique: false });
+                    store.createIndex('date', 'date', { unique: false });
+                }
+            };
+            request.onsuccess = (event) => { dbInstance = event.target.result; resolve(dbInstance); };
+            request.onerror = (event) => reject(event.target.error);
+        });
+    }
+
+    async function dbAddBill(bill) {
+        const db = await openDB();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction('bills', 'readwrite');
+            tx.objectStore('bills').add(bill);
+            tx.oncomplete = () => resolve(true);
+            tx.onerror = (e) => reject(e.target.error);
+        });
+    }
+
+    async function dbGetAllBills() {
+        const db = await openDB();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction('bills', 'readonly');
+            const request = tx.objectStore('bills').getAll();
+            request.onsuccess = () => resolve(request.result || []);
+            request.onerror = (e) => reject(e.target.error);
+        });
+    }
+
+    async function dbGetBill(id) {
+        const db = await openDB();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction('bills', 'readonly');
+            const request = tx.objectStore('bills').get(id);
+            request.onsuccess = () => resolve(request.result || null);
+            request.onerror = (e) => reject(e.target.error);
+        });
+    }
+
+    async function dbDeleteBill(id) {
+        const db = await openDB();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction('bills', 'readwrite');
+            tx.objectStore('bills').delete(id);
+            tx.oncomplete = () => resolve(true);
+            tx.onerror = (e) => reject(e.target.error);
+        });
+    }
+
+    function generateId() {
+        return 'bill_' + Date.now() + '_' + Math.random().toString(36).slice(2, 9);
+    }
+
+    // ============================================================
+    // TOAST
+    // ============================================================
+    function showToast(message, type) {
+        const toast = document.getElementById('toast');
+        toast.textContent = message;
+        toast.className = 'toast show' + (type === 'error' ? ' error' : '');
+        setTimeout(() => { toast.className = 'toast'; }, 2800);
+    }
+
+    // ============================================================
+    // NAVIGATION
+    // ============================================================
+    function showScreen(name) {
+        document.getElementById('homeScreen').style.display = name === 'home' ? 'block' : 'none';
+        document.getElementById('categoryScreen').style.display = name === 'category' ? 'block' : 'none';
+        document.getElementById('detailScreen').style.display = name === 'detail' ? 'block' : 'none';
+        document.getElementById('fabAdd').style.display = name === 'detail' ? 'none' : 'flex';
+
+        const header = document.getElementById('appHeader');
+        const subtitle = document.getElementById('headerSubtitle');
+        let backBtnHtml = '';
+        if (name === 'category') {
+            const cat = CATEGORIES.find(c => c.id === currentCategoryId);
+            backBtnHtml = '<button class="back-btn" onclick="goHome()">← Back</button>';
+            header.querySelector('h1').innerHTML = backBtnHtml + (cat ? cat.icon + ' ' + cat.name : 'Category');
+            subtitle.textContent = 'Tap a bill to view it';
+        } else if (name === 'detail') {
+            backBtnHtml = '<button class="back-btn" onclick="goToCategory(currentCategoryId)">← Back</button>';
+            header.querySelector('h1').innerHTML = backBtnHtml + 'Bill Details';
+            subtitle.textContent = '';
+        } else {
+            header.querySelector('h1').innerHTML = '📁 Bill Folder';
+            subtitle.textContent = 'Snap it. File it. Find it later.';
+        }
+    }
+
+    function goHome() {
+        currentCategoryId = null;
+        renderHome();
+        showScreen('home');
+    }
+
+    async function goToCategory(categoryId) {
+        currentCategoryId = categoryId;
+        await renderCategoryList(categoryId);
+        showScreen('category');
+    }
+
+    async function goToDetail(billId) {
+        currentBillId = billId;
+        const bill = await dbGetBill(billId);
+        if (!bill) { showToast('Bill not found', 'error'); return; }
+        document.getElementById('detailPhoto').src = bill.photo;
+        const cat = CATEGORIES.find(c => c.id === bill.category);
+        document.getElementById('detailCategory').textContent = cat ? (cat.icon + ' ' + cat.name) : bill.category;
+        document.getElementById('detailDate').textContent = bill.date || '-';
+        document.getElementById('detailRef').textContent = bill.refNumber || '-';
+        document.getElementById('detailNotes').textContent = bill.notes || '-';
+        showScreen('detail');
+    }
+
+    // ============================================================
+    // RENDER: HOME
+    // ============================================================
+    async function renderHome() {
+        const allBills = await dbGetAllBills();
+        const counts = {};
+        allBills.forEach(b => { counts[b.category] = (counts[b.category] || 0) + 1; });
+
+        const grid = document.getElementById('categoryGrid');
+        grid.innerHTML = CATEGORIES.map(cat => `
+            <div class="category-card" style="--cat-color:${cat.color}" onclick="goToCategory('${cat.id}')">
+                <div class="cat-icon">${cat.icon}</div>
+                <div>
+                    <div class="cat-name">${cat.name}</div>
+                    <div class="cat-count">${counts[cat.id] || 0} saved</div>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    // ============================================================
+    // RENDER: CATEGORY LIST
+    // ============================================================
+    async function renderCategoryList(categoryId) {
+        const allBills = await dbGetAllBills();
+        const bills = allBills
+            .filter(b => b.category === categoryId)
+            .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+
+        const cat = CATEGORIES.find(c => c.id === categoryId);
+        const listEl = document.getElementById('billList');
+
+        if (bills.length === 0) {
+            listEl.innerHTML = `
+                <div class="empty-state">
+                    <div class="big-icon">${cat ? cat.icon : '📄'}</div>
+                    <div>No bills saved here yet.</div>
+                    <div>Tap the + button to add one.</div>
+                </div>`;
+            return;
+        }
+
+        listEl.innerHTML = bills.map(bill => `
+            <div class="bill-card" style="--cat-color:${cat ? cat.color : '#5A6270'}" onclick="goToDetail('${bill.id}')">
+                <img src="${bill.photo}" alt="thumbnail">
+                <div class="bill-info">
+                    <div class="bill-ref">${bill.refNumber || 'No reference number'}</div>
+                    <div class="bill-date">${bill.date || 'No date'}</div>
+                    ${bill.notes ? `<div class="bill-notes">${bill.notes}</div>` : ''}
+                </div>
+            </div>
+        `).join('');
+    }
+
+    // ============================================================
+    // ADD BILL MODAL
+    // ============================================================
+    function openAddModal() {
+        const select = document.getElementById('formCategory');
+        select.innerHTML = CATEGORIES.map(c => `<option value="${c.id}">${c.icon} ${c.name}</option>`).join('');
+        if (currentCategoryId) select.value = currentCategoryId;
+
+        document.getElementById('formDate').value = new Date().toISOString().split('T')[0];
+        document.getElementById('formRef').value = '';
+        document.getElementById('formNotes').value = '';
+        pendingPhotoDataUrl = null;
+        const preview = document.getElementById('capturePreviewImg');
+        preview.src = '';
+        preview.classList.remove('show');
+        document.getElementById('saveBillBtn').disabled = true;
+
+        document.getElementById('addModal').classList.add('show');
+    }
+
+    function closeAddModal() {
+        document.getElementById('addModal').classList.remove('show');
+    }
+
+    // ============================================================
+    // PHOTO CAPTURE
+    // ============================================================
+    async function capturePhoto(mode) {
+        try {
+            let dataUrl = null;
+
+            if (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) {
+                const { Camera, Filesystem } = Capacitor.Plugins;
+
+                let result;
+                if (mode === 'camera') {
+                    result = await Camera.takePhoto({ quality: 80, includeMetadata: true });
+                } else {
+                    const galleryResult = await Camera.chooseFromGallery({ quality: 80, includeMetadata: true });
+                    result = galleryResult.results[0];
+                }
+                if (!result) return;
+
+                const format = (result.metadata && result.metadata.format) ? result.metadata.format : 'jpeg';
+                const fileData = await Filesystem.readFile({ path: result.uri });
+                dataUrl = `data:image/${format};base64,${fileData.data}`;
+            } else {
+                // Browser / PWA fallback
+                dataUrl = await new Promise((resolve) => {
+                    const input = document.getElementById('fallbackFileInput');
+                    input.value = '';
+                    if (mode === 'camera') {
+                        input.setAttribute('capture', 'environment');
+                    } else {
+                        input.removeAttribute('capture');
+                    }
+                    input.onchange = () => {
+                        const file = input.files[0];
+                        if (!file) { resolve(null); return; }
+                        const reader = new FileReader();
+                        reader.onload = () => resolve(reader.result);
+                        reader.readAsDataURL(file);
+                    };
+                    input.click();
+                });
+            }
+
+            if (!dataUrl) return; // user cancelled
+
+            pendingPhotoDataUrl = dataUrl;
+            const preview = document.getElementById('capturePreviewImg');
+            preview.src = dataUrl;
+            preview.classList.add('show');
+            document.getElementById('saveBillBtn').disabled = false;
+
+        } catch (error) {
+            console.error('Capture error:', error);
+            showToast('❌ Could not get photo: ' + error.message, 'error');
+        }
+    }
+
+    // ============================================================
+    // SAVE BILL
+    // ============================================================
+    async function saveBill() {
+        if (!pendingPhotoDataUrl) {
+            showToast('❌ Please add a photo first', 'error');
+            return;
+        }
+        const category = document.getElementById('formCategory').value;
+        const date = document.getElementById('formDate').value;
+        const refNumber = document.getElementById('formRef').value.trim();
+        const notes = document.getElementById('formNotes').value.trim();
+
+        const bill = {
+            id: generateId(),
+            category,
+            date,
+            refNumber,
+            notes,
+            photo: pendingPhotoDataUrl,
+            createdAt: new Date().toISOString()
+        };
+
+        try {
+            await dbAddBill(bill);
+            showToast('✅ Bill saved');
+            closeAddModal();
+            if (currentCategoryId) {
+                await renderCategoryList(currentCategoryId);
+            } else {
+                await renderHome();
+            }
+        } catch (error) {
+            console.error('Save error:', error);
+            showToast('❌ Error saving bill: ' + error.message, 'error');
+        }
+    }
+
+    // ============================================================
+    // DELETE BILL
+    // ============================================================
+    async function deleteBillConfirm() {
+        if (!currentBillId) return;
+        const confirmed = confirm('Delete this bill? This cannot be undone.');
+        if (!confirmed) return;
+
+        try {
+            await dbDeleteBill(currentBillId);
+            showToast('✅ Bill deleted');
+            goToCategory(currentCategoryId);
+        } catch (error) {
+            console.error('Delete error:', error);
+            showToast('❌ Error deleting bill: ' + error.message, 'error');
+        }
+    }
+
+    // ============================================================
+    // INIT
+    // ============================================================
+    (async function init() {
+        try {
+            await openDB();
+            await renderHome();
+        } catch (error) {
+            console.error('Init error:', error);
+            showToast('❌ Could not open storage: ' + error.message, 'error');
+        }
+    })();
+</script>
+</body>
+</html>
