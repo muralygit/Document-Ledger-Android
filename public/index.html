@@ -89,6 +89,14 @@
         color: var(--accent-dark); background: #E4DCC2;
         padding: 2px 7px; border-radius: 10px; margin-top: 3px;
     }
+    .guide-section { margin-bottom: 20px; }
+    .guide-section h3 {
+        font-size: 0.95rem; color: var(--accent-dark); margin-bottom: 6px;
+    }
+    .guide-section p {
+        font-size: 0.86rem; line-height: 1.5; color: var(--ink);
+        margin-bottom: 8px;
+    }
     main { padding: 18px 16px 10px; max-width: 720px; margin: 0 auto; }
 
     /* Category grid (folder tabs) */
@@ -269,6 +277,7 @@
 
 <header class="app-header" id="appHeader">
     <div class="header-actions">
+        <button class="search-btn" id="guideToggleBtn" onclick="openGuide()">❓</button>
         <button class="search-btn" id="searchToggleBtn" onclick="openSearch()">🔍</button>
         <button class="sync-btn" id="syncBtn" onclick="openSyncModal()">☁️ <span id="syncStatusLabel">Not connected</span></button>
     </div>
@@ -385,6 +394,55 @@
         <button class="btn-primary" onclick="saveFirebaseConfig()">Save & Connect</button>
         <button class="btn-primary" style="background:#5A6270; margin-top:10px;" onclick="syncNow()">🔄 Sync Now (upload + restore)</button>
         <div id="syncStatusDetail" style="font-size:0.8rem; color:var(--ink-soft); margin-top:14px; white-space:pre-wrap;"></div>
+    </div>
+</div>
+
+<!-- USAGE GUIDE MODAL -->
+<div class="modal-overlay" id="guideModal">
+    <div class="modal-sheet">
+        <button class="modal-close" onclick="closeGuide()">✕</button>
+        <h2>📖 About Bill Folder</h2>
+
+        <div class="guide-section">
+            <h3>What is this app for?</h3>
+            <p>Most homes deal with a steady pile of paper: electricity bills, water bills, land tax and building tax receipts, cable/subscription invoices — each with its own account number, due date, and payment history buried somewhere in fine print. They get lost, faded, or thrown out before you need them again — usually right when a payment dispute or renewal comes up.</p>
+            <p><strong>Bill Folder turns your phone into a filing cabinet for all of it.</strong> Photograph a bill once, sort it into a category, and it's saved permanently on your device — searchable by any number or word on it, even ones you never typed in yourself.</p>
+        </div>
+
+        <div class="guide-section">
+            <h3>Adding a bill</h3>
+            <p>Tap the green <strong>+</strong> button → choose a category → tap <strong>Take Photo</strong> (opens your camera) or <strong>Choose from Gallery</strong> (pick an existing photo). Fill in the date and a reference/ID number if you have one, add any notes, then <strong>Save Bill</strong>.</p>
+        </div>
+
+        <div class="guide-section">
+            <h3>Automatic text reading (OCR)</h3>
+            <p>Right after you take or pick a photo, the app automatically scans it for any printed text — bill numbers, names, addresses — and shows you what it found. This happens entirely on your device; nothing is sent anywhere.</p>
+            <p><strong>Good to know:</strong> it reads clear printed English/Latin text well. It struggles with handwriting and does not read Malayalam or other non-Latin scripts — those will show as garbled text, which is expected, not a bug.</p>
+        </div>
+
+        <div class="guide-section">
+            <h3>Finding a bill later</h3>
+            <p>Tap 🔍 at the top and type anything — a consumer number, a name, part of an address, a date, or a word from your notes. It searches every bill in every category at once, including the text the camera automatically read off each photo. You don't need to remember which category you filed something under.</p>
+        </div>
+
+        <div class="guide-section">
+            <h3>Backing up your bills</h3>
+            <p>Tap ☁️ → <strong>Download Backup (JSON)</strong> to save all your bills and photos into one file, shareable via WhatsApp, Telegram, Google Drive, or any app on your phone. Keep this somewhere safe — it's your only copy outside this specific device.</p>
+            <p>To bring bills back (new phone, reinstalled app, etc.), use <strong>Restore from Backup File</strong> and pick that saved file.</p>
+        </div>
+
+        <div class="guide-section">
+            <h3>Cloud sync (optional)</h3>
+            <p>If you set up a free Firebase project and paste its configuration under ☁️ → Cloud Sync, every new bill automatically backs up to the cloud as you add it, and you can pull everything down onto a second device with <strong>Sync Now</strong>. This step is entirely optional — the app works fully offline without it.</p>
+        </div>
+
+        <div class="guide-section">
+            <h3>Important to know</h3>
+            <p>• All your bills live only on this device unless you back them up or connect cloud sync.<br>
+            • Uninstalling the app, or clearing its storage from Android Settings, deletes everything that hasn't been backed up.<br>
+            • Deleting a bill inside the app cannot be undone.<br>
+            • OCR text is a convenience for searching — always double check the actual photo for anything important like exact amounts or due dates.</p>
+        </div>
     </div>
 </div>
 
@@ -525,6 +583,14 @@
         currentCategoryId = null;
         renderHome();
         showScreen('home');
+    }
+
+    function openGuide() {
+        document.getElementById('guideModal').classList.add('show');
+    }
+
+    function closeGuide() {
+        document.getElementById('guideModal').classList.remove('show');
     }
 
     function openSearch() {
