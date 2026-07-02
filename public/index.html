@@ -272,6 +272,10 @@
             <div class="dl">Notes</div>
             <div class="dv" id="detailNotes">-</div>
         </div>
+        <div class="detail-field">
+            <div class="dl">Text found on photo (OCR)</div>
+            <div class="dv" id="detailOcrText" style="white-space: pre-wrap; font-size: 0.88rem; color: var(--ink-soft);">-</div>
+        </div>
         <button class="btn-danger" onclick="deleteBillConfirm()">🗑️ Delete this bill</button>
     </section>
 </main>
@@ -294,6 +298,7 @@
             <button type="button" onclick="capturePhoto('gallery')">🖼️ Choose from Gallery</button>
         </div>
         <img id="capturePreviewImg" class="capture-preview" src="" alt="Preview">
+        <div id="ocrPreviewBox" style="display:none; background:#F3EEE1; border-radius:8px; padding:10px 12px; margin-bottom:14px; font-size:0.82rem; color:var(--ink-soft); white-space:pre-wrap; max-height:120px; overflow-y:auto;"></div>
 
         <div class="field">
             <label>Date</label>
@@ -333,6 +338,7 @@
     let currentCategoryId = null;
     let currentBillId = null;
     let pendingPhotoDataUrl = null;
+    let pendingOcrText = '';
 
     // ============================================================
     // INDEXEDDB
@@ -461,6 +467,7 @@
         document.getElementById('detailDate').textContent = bill.date || '-';
         document.getElementById('detailRef').textContent = bill.refNumber || '-';
         document.getElementById('detailNotes').textContent = bill.notes || '-';
+        document.getElementById('detailOcrText').textContent = bill.ocrText || '(no text detected)';
         showScreen('detail');
     }
 
@@ -530,9 +537,13 @@
         document.getElementById('formRef').value = '';
         document.getElementById('formNotes').value = '';
         pendingPhotoDataUrl = null;
+        pendingOcrText = '';
         const preview = document.getElementById('capturePreviewImg');
         preview.src = '';
         preview.classList.remove('show');
+        const ocrBox = document.getElementById('ocrPreviewBox');
+        ocrBox.style.display = 'none';
+        ocrBox.textContent = '';
         document.getElementById('saveBillBtn').disabled = true;
 
         document.getElementById('addModal').classList.add('show');
@@ -593,6 +604,28 @@
             preview.classList.add('show');
             document.getElementById('saveBillBtn').disabled = false;
 
+            // Run on-device OCR to extract any text visible on the photo
+            const ocrBox = document.getElementById('ocrPreviewBox');
+            pendingOcrText = '';
+            if (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) {
+                ocrBox.style.display = 'block';
+                ocrBox.textContent = 'Reading text from photo...';
+                try {
+                    const { Ocr } = Capacitor.Plugins;
+                    const ocrResult = await Ocr.process({ image: dataUrl });
+                    const texts = (ocrResult.results || []).map(r => r.text).filter(Boolean);
+                    pendingOcrText = texts.join('\n');
+                    ocrBox.textContent = pendingOcrText
+                        ? ('Text found:\n' + pendingOcrText)
+                        : 'No text detected on this photo.';
+                } catch (ocrError) {
+                    console.error('OCR error:', ocrError);
+                    ocrBox.textContent = 'Could not read text from photo (saved without OCR text).';
+                }
+            } else {
+                ocrBox.style.display = 'none';
+            }
+
         } catch (error) {
             console.error('Capture error:', error);
             showToast('❌ Could not get photo: ' + error.message, 'error');
@@ -619,6 +652,7 @@
             refNumber,
             notes,
             photo: pendingPhotoDataUrl,
+            ocrText: pendingOcrText,
             createdAt: new Date().toISOString()
         };
 
