@@ -1,1 +1,7 @@
 
+{
+  "appId": "com.muraly.billfolder",
+  "appName": "Bill Folder",
+  "webDir": "public",
+  "bundledWebRuntime": false
+}
