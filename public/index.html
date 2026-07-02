@@ -67,6 +67,24 @@
         display: flex; align-items: center; gap: 5px;
     }
     .sync-btn.connected { background: rgba(120,200,140,0.25); }
+    .search-btn {
+        position: absolute; top: 18px; right: 118px;
+        background: rgba(255,255,255,0.12);
+        border: none; color: #F3EFE4; font-size: 0.95rem;
+        width: 30px; height: 30px; border-radius: 50%; cursor: pointer;
+        display: flex; align-items: center; justify-content: center;
+    }
+    .search-bar-wrap { margin-bottom: 16px; }
+    .search-bar-wrap input {
+        width: 100%; padding: 12px 14px; border-radius: 10px;
+        border: 1px solid var(--line); font-size: 0.95rem;
+        background: var(--card); color: var(--ink);
+    }
+    .match-tag {
+        display: inline-block; font-size: 0.68rem; font-weight: 600;
+        color: var(--accent-dark); background: #E4DCC2;
+        padding: 2px 7px; border-radius: 10px; margin-top: 3px;
+    }
     main { padding: 18px 16px 10px; max-width: 720px; margin: 0 auto; }
 
     /* Category grid (folder tabs) */
@@ -247,6 +265,7 @@
 
 <header class="app-header" id="appHeader">
     <button class="sync-btn" id="syncBtn" onclick="openSyncModal()">☁️ <span id="syncStatusLabel">Not connected</span></button>
+    <button class="search-btn" id="searchToggleBtn" onclick="openSearch()">🔍</button>
     <h1>📁 Bill Folder</h1>
     <p id="headerSubtitle">Snap it. File it. Find it later.</p>
 </header>
@@ -286,6 +305,14 @@
             <div class="dv" id="detailOcrText" style="white-space: pre-wrap; font-size: 0.88rem; color: var(--ink-soft);">-</div>
         </div>
         <button class="btn-danger" onclick="deleteBillConfirm()">🗑️ Delete this bill</button>
+    </section>
+
+    <!-- SEARCH: results across all bills -->
+    <section id="searchScreen" style="display:none;">
+        <div class="search-bar-wrap">
+            <input type="text" id="searchInput" placeholder="Search by number, name, date, notes..." oninput="performSearch()" autofocus>
+        </div>
+        <div class="bill-list" id="searchResultsList"></div>
     </section>
 </main>
 
@@ -452,7 +479,8 @@
         document.getElementById('homeScreen').style.display = name === 'home' ? 'block' : 'none';
         document.getElementById('categoryScreen').style.display = name === 'category' ? 'block' : 'none';
         document.getElementById('detailScreen').style.display = name === 'detail' ? 'block' : 'none';
-        document.getElementById('fabAdd').style.display = name === 'detail' ? 'none' : 'flex';
+        document.getElementById('searchScreen').style.display = name === 'search' ? 'block' : 'none';
+        document.getElementById('fabAdd').style.display = (name === 'detail' || name === 'search') ? 'none' : 'flex';
 
         const header = document.getElementById('appHeader');
         const subtitle = document.getElementById('headerSubtitle');
@@ -463,9 +491,13 @@
             header.querySelector('h1').innerHTML = backBtnHtml + (cat ? cat.icon + ' ' + cat.name : 'Category');
             subtitle.textContent = 'Tap a bill to view it';
         } else if (name === 'detail') {
-            backBtnHtml = '<button class="back-btn" onclick="goToCategory(currentCategoryId)">← Back</button>';
+            backBtnHtml = '<button class="back-btn" onclick="goBackFromDetail()">← Back</button>';
             header.querySelector('h1').innerHTML = backBtnHtml + 'Bill Details';
             subtitle.textContent = '';
+        } else if (name === 'search') {
+            backBtnHtml = '<button class="back-btn" onclick="goHome()">← Back</button>';
+            header.querySelector('h1').innerHTML = backBtnHtml + '🔍 Search';
+            subtitle.textContent = 'Searches numbers, notes, dates and text found on photos';
         } else {
             header.querySelector('h1').innerHTML = '📁 Bill Folder';
             subtitle.textContent = 'Snap it. File it. Find it later.';
@@ -478,14 +510,95 @@
         showScreen('home');
     }
 
+    function openSearch() {
+        document.getElementById('searchInput').value = '';
+        document.getElementById('searchResultsList').innerHTML = `
+            <div class="empty-state">
+                <div class="big-icon">🔍</div>
+                <div>Type to search across every bill.</div>
+                <div>Matches category, date, ID number, notes, and any text found on the photo.</div>
+            </div>`;
+        showScreen('search');
+        setTimeout(() => document.getElementById('searchInput').focus(), 50);
+    }
+
+    async function performSearch() {
+        const query = document.getElementById('searchInput').value.trim().toLowerCase();
+        const resultsList = document.getElementById('searchResultsList');
+
+        if (!query) {
+            resultsList.innerHTML = `
+                <div class="empty-state">
+                    <div class="big-icon">🔍</div>
+                    <div>Type to search across every bill.</div>
+                </div>`;
+            return;
+        }
+
+        const allBills = await dbGetAllBills();
+        const matches = allBills.filter(bill => {
+            const cat = CATEGORIES.find(c => c.id === bill.category);
+            const haystack = [
+                cat ? cat.name : bill.category,
+                bill.date,
+                bill.refNumber,
+                bill.notes,
+                bill.ocrText
+            ].join(' ').toLowerCase();
+            return haystack.includes(query);
+        }).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+
+        if (matches.length === 0) {
+            resultsList.innerHTML = `
+                <div class="empty-state">
+                    <div class="big-icon">🤷</div>
+                    <div>No bills match "${query}".</div>
+                </div>`;
+            return;
+        }
+
+        resultsList.innerHTML = matches.map(bill => {
+            const cat = CATEGORIES.find(c => c.id === bill.category);
+            let matchedIn = [];
+            if ((bill.refNumber || '').toLowerCase().includes(query)) matchedIn.push('Reference');
+            if ((bill.notes || '').toLowerCase().includes(query)) matchedIn.push('Notes');
+            if ((bill.ocrText || '').toLowerCase().includes(query)) matchedIn.push('Photo text');
+            if ((bill.date || '').toLowerCase().includes(query)) matchedIn.push('Date');
+            if (cat && cat.name.toLowerCase().includes(query)) matchedIn.push('Category');
+
+            return `
+                <div class="bill-card" style="--cat-color:${cat ? cat.color : '#5A6270'}" onclick="goToDetail('${bill.id}', 'search')">
+                    <img src="${bill.photo}" alt="thumbnail">
+                    <div class="bill-info">
+                        <div class="bill-ref">${cat ? cat.icon + ' ' + cat.name : bill.category} — ${bill.refNumber || 'No reference number'}</div>
+                        <div class="bill-date">${bill.date || 'No date'}</div>
+                        ${matchedIn.length ? `<span class="match-tag">Matched: ${matchedIn.join(', ')}</span>` : ''}
+                    </div>
+                </div>`;
+        }).join('');
+    }
+
     async function goToCategory(categoryId) {
         currentCategoryId = categoryId;
         await renderCategoryList(categoryId);
         showScreen('category');
     }
 
-    async function goToDetail(billId) {
+    let detailReturnTo = 'home';
+
+    function goBackFromDetail() {
+        if (detailReturnTo === 'search') {
+            showScreen('search');
+        } else if (currentCategoryId) {
+            goToCategory(currentCategoryId);
+        } else {
+            goHome();
+        }
+    }
+
+    async function goToDetail(billId, returnTo) {
         currentBillId = billId;
+        detailReturnTo = returnTo || 'category';
         const bill = await dbGetBill(billId);
         if (!bill) { showToast('Bill not found', 'error'); return; }
         document.getElementById('detailPhoto').src = bill.photo;
@@ -541,7 +654,7 @@
         }
 
         listEl.innerHTML = bills.map(bill => `
-            <div class="bill-card" style="--cat-color:${cat ? cat.color : '#5A6270'}" onclick="goToDetail('${bill.id}')">
+            <div class="bill-card" style="--cat-color:${cat ? cat.color : '#5A6270'}" onclick="goToDetail('${bill.id}', 'category')">
                 <img src="${bill.photo}" alt="thumbnail">
                 <div class="bill-info">
                     <div class="bill-ref">${bill.refNumber || 'No reference number'}</div>
