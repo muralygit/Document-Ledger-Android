@@ -59,20 +59,24 @@
         align-items: center;
         gap: 6px;
     }
+    .header-actions {
+        position: absolute; top: 16px; right: 16px;
+        display: flex; align-items: center; gap: 12px;
+    }
     .sync-btn {
-        position: absolute; top: 18px; right: 16px;
         background: rgba(255,255,255,0.12);
         border: none; color: #F3EFE4; font-size: 0.72rem;
-        padding: 6px 10px; border-radius: 14px; cursor: pointer;
+        padding: 8px 12px; border-radius: 14px; cursor: pointer;
         display: flex; align-items: center; gap: 5px;
+        white-space: nowrap; flex-shrink: 0;
     }
     .sync-btn.connected { background: rgba(120,200,140,0.25); }
     .search-btn {
-        position: absolute; top: 18px; right: 118px;
         background: rgba(255,255,255,0.12);
-        border: none; color: #F3EFE4; font-size: 0.95rem;
-        width: 30px; height: 30px; border-radius: 50%; cursor: pointer;
+        border: none; color: #F3EFE4; font-size: 1.2rem;
+        width: 40px; height: 40px; border-radius: 50%; cursor: pointer;
         display: flex; align-items: center; justify-content: center;
+        flex-shrink: 0;
     }
     .search-bar-wrap { margin-bottom: 16px; }
     .search-bar-wrap input {
@@ -264,8 +268,10 @@
 <body>
 
 <header class="app-header" id="appHeader">
-    <button class="sync-btn" id="syncBtn" onclick="openSyncModal()">☁️ <span id="syncStatusLabel">Not connected</span></button>
-    <button class="search-btn" id="searchToggleBtn" onclick="openSearch()">🔍</button>
+    <div class="header-actions">
+        <button class="search-btn" id="searchToggleBtn" onclick="openSearch()">🔍</button>
+        <button class="sync-btn" id="syncBtn" onclick="openSyncModal()">☁️ <span id="syncStatusLabel">Not connected</span></button>
+    </div>
     <h1>📁 Bill Folder</h1>
     <p id="headerSubtitle">Snap it. File it. Find it later.</p>
 </header>
@@ -357,7 +363,18 @@
 <div class="modal-overlay" id="syncModal">
     <div class="modal-sheet">
         <button class="modal-close" onclick="closeSyncModal()">✕</button>
-        <h2>☁️ Cloud Sync</h2>
+        <h2>💾 Backup & Sync</h2>
+
+        <p style="font-size:0.85rem; color:var(--ink-soft); margin-bottom:10px;">
+            Save a local backup file (all bills + photos) any time — works even without cloud sync set up.
+        </p>
+        <button class="btn-primary" style="background:var(--accent);" onclick="downloadLocalBackup()">⬇️ Download Backup (JSON)</button>
+        <button class="btn-primary" style="background:#5A6270; margin-top:10px;" onclick="document.getElementById('restoreFileInput').click()">⬆️ Restore from Backup File</button>
+        <input type="file" id="restoreFileInput" accept="application/json" onchange="restoreFromBackupFile(event)">
+
+        <div style="border-top:1px solid var(--line); margin:18px 0 14px;"></div>
+
+        <h2 style="font-size:1rem;">☁️ Cloud Sync (optional)</h2>
         <p style="font-size:0.85rem; color:var(--ink-soft); margin-bottom:14px;">
             Paste your Firebase project config below to back up bills to the cloud and restore them on another device.
         </p>
@@ -828,6 +845,96 @@
             console.error('Delete error:', error);
             showToast('❌ Error deleting bill: ' + error.message, 'error');
         }
+    }
+
+    // ============================================================
+    // LOCAL BACKUP (native share/save, same proven pattern as before)
+    // ============================================================
+    async function saveAndShareFile(filename, content, mimeType) {
+        try {
+            if (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) {
+                const { Filesystem } = Capacitor.Plugins;
+                const { Share } = Capacitor.Plugins;
+
+                const result = await Filesystem.writeFile({
+                    path: filename,
+                    data: content,
+                    directory: 'CACHE',
+                    encoding: 'utf8'
+                });
+
+                await Share.share({
+                    title: filename,
+                    url: result.uri,
+                    dialogTitle: 'Save or share ' + filename
+                });
+
+                return true;
+            } else {
+                const blob = new Blob([content], { type: mimeType });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = filename;
+                link.style.display = 'none';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                setTimeout(() => URL.revokeObjectURL(link.href), 100);
+                return true;
+            }
+        } catch (error) {
+            console.error('Error saving/sharing file:', error);
+            showToast('❌ Error saving file: ' + error.message, 'error');
+            return false;
+        }
+    }
+
+    async function downloadLocalBackup() {
+        try {
+            const allBills = await dbGetAllBills();
+            const backupData = {
+                app: 'BillFolder',
+                exportedAt: new Date().toISOString(),
+                billCount: allBills.length,
+                bills: allBills
+            };
+            const filename = `bill_folder_backup_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+            const ok = await saveAndShareFile(filename, JSON.stringify(backupData, null, 2), 'application/json');
+            if (ok) showToast(`✅ Backup ready (${allBills.length} bills)`);
+        } catch (error) {
+            console.error('Backup error:', error);
+            showToast('❌ Backup failed: ' + error.message, 'error');
+        }
+    }
+
+    function restoreFromBackupFile(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = async () => {
+            try {
+                const backupData = JSON.parse(reader.result);
+                const bills = backupData.bills || [];
+                const existing = await dbGetAllBills();
+                const existingIds = new Set(existing.map(b => b.id));
+                let restored = 0;
+
+                for (const bill of bills) {
+                    if (existingIds.has(bill.id)) continue;
+                    await dbAddBill(bill);
+                    restored++;
+                }
+
+                showToast(`✅ Restored ${restored} bill(s) from backup`);
+                await renderHome();
+                if (currentCategoryId) await renderCategoryList(currentCategoryId);
+            } catch (error) {
+                console.error('Restore error:', error);
+                showToast('❌ Could not read backup file: ' + error.message, 'error');
+            }
+        };
+        reader.readAsText(file);
+        event.target.value = '';
     }
 
     // ============================================================
